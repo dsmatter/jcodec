@@ -260,9 +260,25 @@ public class NIOUtils {
         return Platform.stringFromCharset(toArray(fork), charset);
     }
 
+    public static String readFixedLengthNullTermString(ByteBuffer bb, int maxLength, String charset) {
+        final int pos = bb.position();
+        final int limit = bb.limit();
+        bb.limit(bb.position() + maxLength);
+        final String s = readNullTermStringCharset(bb, charset);
+        bb.position(pos + maxLength);
+        bb.limit(limit);
+        return s;
+    }
+
     public static ByteBuffer readBuf(ByteBuffer buffer) {
         ByteBuffer result = buffer.duplicate();
         buffer.position(buffer.limit());
+        return result;
+    }
+
+    public static byte[] getNBytes(ByteBuffer bb, int n) {
+        final byte[] result = new byte[n];
+        bb.get(result);
         return result;
     }
 
@@ -382,6 +398,40 @@ public class NIOUtils {
                 return i;
         }
         return -1;
+    }
+
+    public static ByteBuffer ensureBytes(int n, ByteBuffer bb, ReadableByteChannel ch) throws IOException {
+        final int remaining = bb.remaining();
+        final int bytesToBeRead = n - remaining;
+        if (bytesToBeRead <= 0) {
+            return bb;
+        }
+        if (bb.capacity() - bb.position() < n) {
+            // Buffer needs to be wrapped or reallocated
+            if (bb.capacity() < n) {
+                final ByteBuffer newBuffer = ByteBuffer.allocate(2*n);
+                newBuffer.order(bb.order());
+                System.arraycopy(bb.array(), bb.position(), newBuffer.array(), 0, bb.remaining());
+                bb = newBuffer;
+                bb.limit(remaining);
+            } else {
+                System.arraycopy(bb.array(), bb.position(), bb.array(), 0, bb.remaining());
+                bb.position(0);
+                bb.limit(remaining);
+            }
+        }
+        // Adjust position and limit for read() call
+        final int pos = bb.position();
+        bb.position(bb.limit());
+        bb.limit(bb.limit() + bytesToBeRead);
+        final int bytesRead = ch.read(bb);
+        if (bytesRead < bytesToBeRead) {
+            throw new IOException("Channel exhausted. Tried to read " + bytesToBeRead + " bytes, got only: " + bytesRead);
+        }
+        // Restore position
+        bb.position(pos);
+
+        return bb;
     }
 
     public static interface FileReaderListener {

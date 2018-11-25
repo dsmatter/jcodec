@@ -5,6 +5,7 @@ import org.jcodec.common.JCodecUtil2;
 import org.jcodec.common.io.IOUtils;
 import org.jcodec.common.io.NIOUtils;
 import org.jcodec.common.model.ChannelLabel;
+import org.jcodec.platform.Platform;
 
 import java.io.File;
 import java.io.IOException;
@@ -129,12 +130,81 @@ public class WavHeader {
         }
     }
 
+    // See http://tech.ebu.ch/docs/tech/tech3285.pdf
+    public static class BroadcastWaveFormatChunk {
+        public final String description;
+        public final String originator;
+        public final String originatorReference;
+        public final String originationDate;
+        public final String originationTime;
+        public final long timeReference;
+        public final int version;
+        public final byte[] umid;
+        public final int loudnessValue;
+        public final int loudnessRange;
+        public final int maxTruePeakLevel;
+        public final int maxMomentaryLoudness;
+        public final int maxShortTermLoudness;
+
+        public BroadcastWaveFormatChunk(
+            String description,
+            String originator,
+            String originatorReference,
+            String originationDate,
+            String originationTime,
+            long timeReference,
+            int version,
+            byte[] umid,
+            int loudnessValue,
+            int loudnessRange,
+            int maxTruePeakLevel,
+            int maxMomentaryLoudness,
+            int maxShortTermLoudness
+        ) {
+            this.description = description;
+            this.originator = originator;
+            this.originatorReference = originatorReference;
+            this.originationDate = originationDate;
+            this.originationTime = originationTime;
+            this.timeReference = timeReference;
+            this.version = version;
+            this.umid = umid;
+            this.loudnessValue = loudnessValue;
+            this.loudnessRange = loudnessRange;
+            this.maxTruePeakLevel = maxTruePeakLevel;
+            this.maxMomentaryLoudness = maxMomentaryLoudness;
+            this.maxShortTermLoudness = maxShortTermLoudness;
+        }
+
+        public static BroadcastWaveFormatChunk get(ByteBuffer bb, int chunkSize) {
+            final int pos = bb.position();
+            final BroadcastWaveFormatChunk chunk =  new BroadcastWaveFormatChunk(
+                NIOUtils.readFixedLengthNullTermString(bb, 256, Platform.UTF_8),
+                NIOUtils.readFixedLengthNullTermString(bb, 32, Platform.UTF_8),
+                NIOUtils.readFixedLengthNullTermString(bb, 32, Platform.UTF_8),
+                NIOUtils.readFixedLengthNullTermString(bb, 10, Platform.UTF_8),
+                NIOUtils.readFixedLengthNullTermString(bb, 8, Platform.UTF_8),
+                bb.getLong(),
+                bb.getInt(),
+                NIOUtils.getNBytes(bb, 64),
+                bb.getInt(),
+                bb.getInt(),
+                bb.getInt(),
+                bb.getInt(),
+                bb.getInt()
+            );
+            bb.position(pos + chunkSize);
+            return chunk;
+        }
+    }
+
     public String chunkId;
     public int chunkSize;
     public String format;
     public FmtChunk fmt;
     public int dataOffset;
     public long dataSize;
+    public BroadcastWaveFormatChunk bwf;
     public static final int WAV_HEADER_SIZE = 44;
 
     public WavHeader(String chunkId, int chunkSize, String format, FmtChunk fmt, int dataOffset, long dataSize) {
@@ -230,40 +300,49 @@ public class WavHeader {
         int chunkSize = buf.getInt();
         String format = NIOUtils.readString(buf, 4);
         FmtChunk fmt = null;
+        BroadcastWaveFormatChunk bwf = null;
 
         if (!"RIFF".equals(chunkId) || !"WAVE".equals(format)) {
             return null;
         }
         String fourcc;
-        int size = 0;
+        int size;
         do {
+            buf = NIOUtils.ensureBytes(8, buf, _in);
             fourcc = NIOUtils.readString(buf, 4);
             size = buf.getInt();
+            if (!"data".equals(fourcc)) {
+                buf = NIOUtils.ensureBytes(size, buf, _in);
+            }
             if ("fmt ".equals(fourcc) && size >= 14 && size <= 1024 * 1024) {
                 switch (size) {
-                case 16:
-                    fmt = FmtChunk.get(buf);
-                    break;
-                case 18:
-                    fmt = FmtChunk.get(buf);
-                    NIOUtils.skip(buf, 2);
-                    break;
-                case 40:
-                    fmt = FmtChunkExtended.get(buf);
-                    NIOUtils.skip(buf, 12);
-                    break;
-                case 28:
-                    fmt = FmtChunkExtended.get(buf);
-                    break;
-                default:
-                    throw new UnhandledStateException("Don't know how to handle fmt size: " + size);
+                    case 16:
+                        fmt = FmtChunk.get(buf);
+                        break;
+                    case 18:
+                        fmt = FmtChunk.get(buf);
+                        NIOUtils.skip(buf, 2);
+                        break;
+                    case 40:
+                        fmt = FmtChunkExtended.get(buf);
+                        NIOUtils.skip(buf, 12);
+                        break;
+                    case 28:
+                        fmt = FmtChunkExtended.get(buf);
+                        break;
+                    default:
+                        throw new UnhandledStateException("Don't know how to handle fmt size: " + size);
                 }
+            } else if ("bext".equals(fourcc)) {
+                bwf = BroadcastWaveFormatChunk.get(buf, size);
             } else if (!"data".equals(fourcc)) {
                 NIOUtils.skip(buf, size);
             }
         } while (!"data".equals(fourcc));
 
-        return new WavHeader(chunkId, chunkSize, format, fmt, buf.position(), size);
+        final WavHeader header = new WavHeader(chunkId, chunkSize, format, fmt, buf.position(), size);
+        header.bwf = bwf;
+        return header;
     }
 
     public static WavHeader multiChannelWavFromFiles(File[] files) throws IOException {

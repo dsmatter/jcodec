@@ -88,4 +88,8 @@ public class WavDemuxer implements Demuxer, DemuxerTrack {
     public List<? extends DemuxerTrack> getAudioTracks() {
         return getTracks();
     }
+
+    public WavHeader.BroadcastWaveFormatChunk getBwf() {
+        return header.bwf;
+    }
 }
