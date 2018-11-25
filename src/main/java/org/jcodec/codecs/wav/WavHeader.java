@@ -41,7 +41,7 @@ public class WavHeader {
             this.guid = guid;
         }
 
-        public static FmtChunk read(ByteBuffer bb) throws IOException {
+        public static FmtChunk get(ByteBuffer bb) throws IOException {
             FmtChunk fmtChunk = FmtChunk.get(bb);
             ByteOrder old = (ByteOrder) bb.order();
             try {

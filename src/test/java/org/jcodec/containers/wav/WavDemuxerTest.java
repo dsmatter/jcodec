@@ -20,4 +20,14 @@ public class WavDemuxerTest {
       demuxer.close();
     }
   }
+
+  @Test
+  public void testBigFmtChunkSampleFile() throws IOException {
+    final WavDemuxer demuxer = new WavDemuxer(NIOUtils.readableFileChannel("src/test/resources/wav/fmt40.wav"));
+    try {
+      assertEquals(48000, demuxer.getMeta().getAudioCodecMeta().getSampleRate());
+    } finally {
+      demuxer.close();
+    }
+  }
 }
