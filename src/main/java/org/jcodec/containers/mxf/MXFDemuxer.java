@@ -7,15 +7,14 @@ import static org.jcodec.containers.mxf.model.MXFUtil.findAllMeta;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.jcodec.api.NotSupportedException;
-import org.jcodec.common.DemuxerTrackMeta;
-import org.jcodec.common.SeekableDemuxerTrack;
-import org.jcodec.common.TrackType;
+import org.jcodec.common.*;
 import org.jcodec.common.io.FileChannelWrapper;
 import org.jcodec.common.io.NIOUtils;
 import org.jcodec.common.io.SeekableByteChannel;
@@ -507,15 +506,47 @@ public class MXFDemuxer {
 
         @Override
         public DemuxerTrackMeta getMeta() {
-            Size size = null;
+            TrackType trackType;
+            VideoCodecMeta videoCodecMeta = null;
+            AudioCodecMeta audioCodecMeta = null;
+
             if (video) {
                 GenericPictureEssenceDescriptor pd = (GenericPictureEssenceDescriptor) descriptor;
-                size = new Size(pd.getStoredWidth(), pd.getStoredHeight());
+                final Size size = new Size(pd.getStoredWidth(), pd.getStoredHeight());
+                trackType = TrackType.VIDEO;
+                videoCodecMeta = VideoCodecMeta.createSimpleVideoCodecMeta(size, ColorSpace.YUV420);
+            } else if (audio) {
+                trackType = TrackType.AUDIO;
+                final GenericSoundEssenceDescriptor sd = (GenericSoundEssenceDescriptor) descriptor;
+                audioCodecMeta = AudioCodecMeta.createAudioCodecMeta(
+                    "",
+                    sd.getQuantizationBits() / 8,
+                    sd.getChannelCount(),
+                    (int)sd.getSampleRate().toDouble(),
+                    ByteOrder.LITTLE_ENDIAN,
+                    sd instanceof WaveAudioDescriptor,
+                    null,
+                    null
+                );
+            } else {
+                trackType = TrackType.OTHER;
             }
 
-            TrackType t = video ? TrackType.VIDEO : (audio ? TrackType.AUDIO : TrackType.OTHER);
-            return new DemuxerTrackMeta(t, getCodec().getCodec(), demuxer.duration, null, demuxer.totalFrames, null,
-                    org.jcodec.common.VideoCodecMeta.createSimpleVideoCodecMeta(size, ColorSpace.YUV420), null);
+            Codec codec = null;
+            if (getCodec() != null) {
+                codec = getCodec().getCodec();
+            }
+
+            return new DemuxerTrackMeta(
+                trackType,
+                codec,
+                demuxer.duration,
+                null,
+                demuxer.totalFrames,
+                null,
+                videoCodecMeta,
+                audioCodecMeta
+            );
         }
 
         public Rational getEditRate() {
