@@ -1,4 +1,6 @@
 package org.jcodec.containers.mxf.model;
+import org.jcodec.common.logging.Logger;
+
 import java.util.Iterator;
 
 import java.lang.System;
@@ -84,7 +86,7 @@ public class WaveAudioDescriptor extends GenericSoundEssenceDescriptor {
                 break;
 
             default:
-                System.out.println(String.format("Unknown tag [ " + ul + "]: %04x", entry.getKey()));
+                Logger.warn(String.format("Unknown tag [ " + ul + "]: %04x", entry.getKey()));
                 continue;
             }
             it.remove();
