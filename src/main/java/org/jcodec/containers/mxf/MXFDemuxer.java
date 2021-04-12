@@ -414,6 +414,36 @@ public class MXFDemuxer {
             return result;
         }
 
+        public ByteBuffer readInitialEssenceData(int maxLen) throws IOException {
+            final ByteBuffer data = ByteBuffer.allocate(maxLen);
+            final SeekableByteChannel ch = demuxer.ch;
+            final MXFPartition partition = demuxer.partitions.get(partIdx);
+
+            synchronized (ch) {
+                ch.setPosition(partition.getEssenceFilePos());
+
+                while (data.position() < maxLen) {
+                    KLV kl = KLV.readKL(ch);
+                    while (kl != null && !essenceUL.equals(kl.key)) {
+                        ch.setPosition(ch.position() + kl.len);
+                        kl = KLV.readKL(ch);
+                    }
+
+                    if (kl == null) {
+                        break;
+                    }
+                    final ByteBuffer chunk = NIOUtils.fetchFromChannel(ch, (int) kl.len);
+                    if (chunk.limit() > data.remaining()) {
+                        chunk.limit(data.remaining());
+                    }
+                    data.put(chunk);
+                }
+            }
+
+            data.flip();
+            return data;
+        }
+
         public MXFPacket readPacket(long off, int len, long pts, int timescale, int duration, int frameNo, boolean kf)
                 throws IOException {
             SeekableByteChannel ch = demuxer.ch;
